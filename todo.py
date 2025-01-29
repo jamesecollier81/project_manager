@@ -2,48 +2,126 @@ import curses
 import json
 from datetime import datetime, timedelta
 
-# Nord theme colors
-class NordColors:
-    POLAR_NIGHT = {
-        'nord0': 0,  # Dark gray
-        'nord1': 1,  # Darker gray
-        'nord2': 2,  # Medium gray
-        'nord3': 3   # Light gray
-    }
-    
-    SNOW_STORM = {
-        'nord4': 4,  # Lightest gray
-        'nord5': 5,  # Almost white
-        'nord6': 6   # White
-    }
-    
-    FROST = {
-        'nord7': 7,  # Mint
-        'nord8': 8,  # Ice blue
-        'nord9': 9,  # Blue
-        'nord10': 10 # Bright blue
-    }
-    
-    AURORA = {
-        'nord11': 11,  # Red
-        'nord12': 12,  # Orange
-        'nord13': 13,  # Yellow
-        'nord14': 14,  # Green
-        'nord15': 15   # Purple
-    }
+# Theme choice between "nord", "github", and "matrix"
+class ThemeManager:
+    def __init__(self):
+        self.current_theme = "nord"
+        
+    def init_nord_theme(self):
+        curses.init_color(0, 100, 110, 140)  # Background
+        curses.init_color(1, 180, 190, 210)
+        curses.init_color(2, 220, 230, 250)
+        curses.init_color(3, 260, 270, 290)
+        curses.init_color(4, 900, 910, 930)
+        curses.init_color(5, 940, 950, 960)
+        curses.init_color(6, 970, 980, 990)
+        curses.init_color(7, 600, 800, 780)
+        curses.init_color(8, 580, 820, 900)
+        curses.init_color(9, 520, 680, 850)
+        curses.init_color(10, 400, 600, 800)
+        curses.init_color(11, 850, 400, 400)
+        curses.init_color(12, 900, 600, 450)
+        curses.init_color(13, 980, 850, 500)
+        curses.init_color(14, 650, 850, 550)
+        curses.init_color(15, 800, 600, 750)
 
+        curses.init_pair(1, 14, 0)  # Green for completed
+        curses.init_pair(2, 13, 0)  # Yellow for in progress
+        curses.init_pair(3, 11, 0)  # Red for overdue
+        curses.init_pair(4, 8, 0)   # Ice blue for headers
+        curses.init_pair(5, 9, 0)   # Blue for selection
+        curses.init_pair(6, 4, 0)   # Default text
+        curses.init_pair(7, 15, 0)  # Purple for high priority
+        curses.init_pair(8, 7, 0)   # Mint for tags
+
+    def init_github_theme(self):
+        # GitHub dark colors
+        curses.init_color(0, 150, 150, 150)   # Dark gray background
+        curses.init_color(1, 900, 900, 900)   # Light gray for text
+        curses.init_color(2, 0, 450, 0)       # GitHub green
+        curses.init_color(3, 841, 494, 0)     # GitHub orange
+        curses.init_color(4, 800, 0, 0)       # GitHub red
+        curses.init_color(5, 0, 366, 800)     # GitHub blue
+        curses.init_color(6, 586, 266, 800)   # GitHub purple
+        
+        curses.init_pair(1, 2, 0)   # Green for completed
+        curses.init_pair(2, 3, 0)   # Orange for in progress
+        curses.init_pair(3, 4, 0)   # Red for overdue
+        curses.init_pair(4, 5, 0)   # Blue for headers
+        curses.init_pair(5, 5, 0)   # Blue for selection
+        curses.init_pair(6, 1, 0)   # Light gray for default text
+        curses.init_pair(7, 6, 0)   # Purple for high priority
+        curses.init_pair(8, 5, 0)   # Blue for tags
+
+    def init_matrix_theme(self):
+        curses.init_color(0, 0, 0, 0)         # Pure black
+        curses.init_color(1, 0, 1000, 0)      # Bright matrix green
+        curses.init_color(2, 0, 800, 0)       # Medium matrix green
+        curses.init_color(3, 0, 600, 0)       # Dark matrix green
+        curses.init_color(4, 0, 400, 0)       # Darker matrix green
+        
+        curses.init_pair(1, 1, 0)   # Bright green for completed
+        curses.init_pair(2, 2, 0)   # Medium green for in progress
+        curses.init_pair(3, 3, 0)   # Dark green for overdue
+        curses.init_pair(4, 1, 0)   # Bright green for headers
+        curses.init_pair(5, 1, 0)   # Bright green for selection
+        curses.init_pair(6, 2, 0)   # Medium green for default text
+        curses.init_pair(7, 1, 0)   # Bright green for high priority
+        curses.init_pair(8, 4, 0)   # Darker green for tags
+
+    def toggle_theme(self):
+        themes = ["nord", "github", "matrix"]
+        current_index = themes.index(self.current_theme)
+        next_index = (current_index + 1) % len(themes)
+        self.current_theme = themes[next_index]
+        
+        if self.current_theme == "nord":
+            self.init_nord_theme()
+        elif self.current_theme == "github":
+            self.init_github_theme()
+        else:
+            self.init_matrix_theme()
+
+class Todo:
+    def __init__(self, description, due_date=None):
+        self.description = description
+        self.completed = False
+        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.due_date = due_date
+        self.priority = "medium"  # New: priority level
+        self.tags = []           # New: tags for categorization
+        self.notes = ""          # New: additional notes
+        self.reminder = None     # New: reminder date/time
+        
 class Project:
     def __init__(self, name):
         self.name = name
         self.todos = []
-        self.sort_by = 'description'  # or 'due_date'
+        self.sort_by = 'description'
         self.sort_reverse = False
+        self.filter_completed = False  # New: option to hide completed tasks
+        self.filter_tags = []         # New: filter by tags
+        self.view_mode = 'all'        # New: view mode (all, today, week)
 
     def sort_todos(self):
-        if self.sort_by == 'description':
-            self.todos.sort(key=lambda x: x['description'].lower(), reverse=self.sort_reverse)
-        else:  # due_date
-            self.todos.sort(key=lambda x: x.get('due_date', '9999-12-31'), reverse=self.sort_reverse)
+        sort_keys = {
+            'description': lambda x: x['description'].lower(),
+            'due_date': lambda x: x['due_date'] or '9999-12-31',
+            'priority': lambda x: {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')],
+            'created': lambda x: x['created_at']
+        }
+        self.todos.sort(key=sort_keys[self.sort_by], reverse=self.sort_reverse)
+
+    def edit_todo(self, new_description=None, new_due_date=None):
+        if not self.projects or not self.projects[self.project_selection].todos:
+            return
+        todo = self.projects[self.project_selection].todos[self.todo_selection]
+        if new_description:
+            todo['description'] = new_description
+        if new_due_date is not None:
+            todo['due_date'] = new_due_date if new_due_date else None
+        self.save_data()
+        self.projects[self.project_selection].sort_todos()
 
 class TodoManager:
     def __init__(self):
@@ -51,7 +129,9 @@ class TodoManager:
         self.active_window = 'projects'
         self.project_selection = 0
         self.todo_selection = 0
+        self.show_completed = True  # Flag to control completed tasks visibility
         self.load_data()
+        self.theme_manager = ThemeManager()
 
     def load_data(self):
         try:
@@ -62,6 +142,23 @@ class TodoManager:
                     proj.todos = saved_proj['todos']
         except FileNotFoundError:
             self.projects = [Project("Default")]
+
+    def get_visible_todos(self):
+        """Returns filtered list of todos based on current settings"""
+        if not self.projects:
+            return []
+        todos = self.projects[self.project_selection].todos
+        if not self.show_completed:
+            todos = [todo for todo in todos if not todo['completed']]
+        return todos
+
+    def toggle_completed_visibility(self):
+        """Toggle whether completed tasks are shown"""
+        self.show_completed = not self.show_completed
+        # Adjust selection if current todo is now hidden
+        visible_todos = self.get_visible_todos()
+        if self.todo_selection >= len(visible_todos):
+            self.todo_selection = max(0, len(visible_todos) - 1)
 
     def save_data(self):
         data = [{'name': p.name, 'todos': p.todos} for p in self.projects]
@@ -143,48 +240,114 @@ def parse_due_date(date_str):
     except ValueError:
         return None
 
-def init_nord_colors():
-    # Polar Night
-    curses.init_color(NordColors.POLAR_NIGHT['nord0'], 180, 204, 251)
-    curses.init_color(NordColors.POLAR_NIGHT['nord1'], 231, 259, 322)
-    curses.init_color(NordColors.POLAR_NIGHT['nord2'], 263, 298, 369)
-    curses.init_color(NordColors.POLAR_NIGHT['nord3'], 298, 337, 416)
-    
-    # Snow Storm
-    curses.init_color(NordColors.SNOW_STORM['nord4'], 847, 871, 914)
-    curses.init_color(NordColors.SNOW_STORM['nord5'], 898, 914, 941)
-    curses.init_color(NordColors.SNOW_STORM['nord6'], 925, 937, 957)
-    
-    # Frost
-    curses.init_color(NordColors.FROST['nord7'], 561, 737, 733)
-    curses.init_color(NordColors.FROST['nord8'], 533, 753, 816)
-    curses.init_color(NordColors.FROST['nord9'], 506, 631, 757)
-    curses.init_color(NordColors.FROST['nord10'], 369, 506, 675)
-    
-    # Aurora
-    curses.init_color(NordColors.AURORA['nord11'], 749, 380, 416)
-    curses.init_color(NordColors.AURORA['nord12'], 816, 529, 439)
-    curses.init_color(NordColors.AURORA['nord13'], 922, 796, 545)
-    curses.init_color(NordColors.AURORA['nord14'], 639, 745, 549)
-    curses.init_color(NordColors.AURORA['nord15'], 706, 557, 678)
+def get_todo_display_style(todo):
+    """Enhanced styling based on todo status and priority"""
+    if todo.completed:
+        return curses.color_pair(1)  # Green for completed
+    if todo.due_date:
+        due_date = datetime.strptime(todo.due_date, "%Y-%m-%d")
+        if due_date.date() < datetime.now().date():
+            return curses.color_pair(3)  # Red for overdue
+    if todo.priority == "high":
+        return curses.color_pair(7)  # Purple for high priority
+    return curses.color_pair(6)  # Default style
 
-    # Modified color pairs to use nord0 (dark gray) as background
-    curses.init_pair(1, NordColors.AURORA['nord14'], NordColors.POLAR_NIGHT['nord0'])  # Green on dark gray
-    curses.init_pair(2, NordColors.AURORA['nord13'], NordColors.POLAR_NIGHT['nord0'])  # Yellow on dark gray
-    curses.init_pair(3, NordColors.AURORA['nord11'], NordColors.POLAR_NIGHT['nord0'])  # Red on dark gray
-    curses.init_pair(4, NordColors.FROST['nord8'], NordColors.POLAR_NIGHT['nord0'])    # Ice blue on dark gray
-    curses.init_pair(5, NordColors.FROST['nord9'], NordColors.POLAR_NIGHT['nord0'])    # Blue on dark gray
-    curses.init_pair(6, NordColors.SNOW_STORM['nord4'], NordColors.POLAR_NIGHT['nord0']) # Light gray on dark gray
+def draw_todo(win, todo, y, x, selected=False):
+    """Enhanced todo item display with priority, tags, and due date"""
+    style = get_todo_display_style(todo)
+    if selected:
+        style |= curses.A_REVERSE
+    
+    # Status indicator
+    prefix = "✓ " if todo.completed else "☐ "
+    
+    # Priority indicator
+    priority_markers = {"high": "❗", "medium": "●", "low": "○"}
+    priority_mark = priority_markers[todo.priority]
+    
+    # Format tags
+    tags_str = " ".join([f"#{tag}" for tag in todo.tags]) if todo.tags else ""
+    
+    # Format due date with warning for approaching deadlines
+    due_date_str = ""
+    if todo.due_date:
+        due_date = datetime.strptime(todo.due_date, "%Y-%m-%d")
+        days_left = (due_date.date() - datetime.now().date()).days
+        if days_left <= 3 and days_left >= 0:
+            due_date_str = f"⚠ Due in {days_left} days"
+        else:
+            due_date_str = f"Due: {todo.due_date}"
+    
+    # Combine all elements
+    display_str = f"{prefix}{priority_mark} {todo.description}"
+    if tags_str:
+        display_str += f" [{tags_str}]"
+    if due_date_str:
+        display_str += f" ({due_date_str})"
+    
+    win.addstr(y, x, display_str[:win.getmaxyx()[1]-2], style)
+def get_visible_todos(self):
+        """Returns filtered list of todos based on current settings"""
+        if not self.projects:
+            return []
+        todos = self.projects[self.project_selection].todos
+        if not self.show_completed:
+            todos = [todo for todo in todos if not todo['completed']]
+        return todos
+
+def get_todo_style(todo):
+    """Get the appropriate color style for a todo item"""
+    if todo['completed']:
+        return curses.color_pair(1)  # Green for completed
+    
+    if todo.get('due_date'):
+        try:
+            due_date = datetime.strptime(todo['due_date'], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            days_until_due = (due_date - today).days
+            
+            if days_until_due < 0:
+                return curses.color_pair(3)  # Red for overdue
+            elif days_until_due <= 2:
+                return curses.color_pair(2)  # Yellow for urgent
+        except ValueError:
+            pass
+    
+    return curses.color_pair(6)  # Default style
+
+def format_todo_display(todo):
+    """Format todo item with visual indicators"""
+    # Status indicator
+    prefix = "✓ " if todo['completed'] else "☐ "
+    
+    # Due date formatting with warning
+    due_date_str = ""
+    if todo.get('due_date'):
+        try:
+            due_date = datetime.strptime(todo['due_date'], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            days_until_due = (due_date - today).days
+            
+            if days_until_due < 0:
+                due_date_str = f" ⚠ Overdue by {abs(days_until_due)} days"
+            elif days_until_due == 0:
+                due_date_str = " ⚠ Due today!"
+            elif days_until_due <= 2:
+                due_date_str = f" ⚠ Due in {days_until_due} days"
+            else:
+                due_date_str = f" ({todo['due_date']})"
+        except ValueError:
+            due_date_str = f" ({todo['due_date']})"
+    
+    return f"{prefix}{todo['description']}{due_date_str}"
 
 def main(stdscr):
     curses.start_color()
-    init_nord_colors()
     curses.curs_set(0)
     
-    # Set background color for main screen
-    stdscr.bkgd(' ', curses.color_pair(6))
+    todo = TodoManager()  # Create TodoManager first
+    todo.theme_manager.init_nord_theme()  # Then initialize theme
     
-    todo = TodoManager()
     max_y, max_x = stdscr.getmaxyx()
     
     # Create windows with Nord theme background
@@ -207,7 +370,7 @@ def main(stdscr):
         # Headers
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [q] Quit"
+        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Switch theme (Nord/GitHub/Matrix) | [q] Quit"
         stdscr.addstr(2, 0, commands)
 
         # Project window
@@ -219,29 +382,33 @@ def main(stdscr):
         # Todo window
         todo_win.addstr(0, 2, f"Todos - {todo.projects[todo.project_selection].name if todo.projects else 'No Project'}")
         if todo.projects:
-            todos = todo.projects[todo.project_selection].todos
-            for i, task in enumerate(todos):
-                prefix = "✓ " if task['completed'] else "☐ "
-                style = curses.color_pair(1) if task['completed'] else curses.A_NORMAL
+            visible_todos = todo.get_visible_todos()
+            completed_count = len([t for t in todo.projects[todo.project_selection].todos if t['completed']])
+            total_count = len(todo.projects[todo.project_selection].todos)
+            
+            # Update header to show task counts
+            header = f"Todos - {todo.projects[todo.project_selection].name} ({completed_count}/{total_count} completed)"
+            if not todo.show_completed:
+                header += " (hiding completed)"
+            todo_win.addstr(0, 2, header)
+
+            # Display todos with enhanced formatting
+            for i, task in enumerate(visible_todos):
+                style = get_todo_style(task)
                 if i == todo.todo_selection and todo.active_window == 'todos':
                     style |= curses.A_REVERSE
                 
-                due_date_str = f"Due: {task.get('due_date', 'No due date')}"
-                task_str = f"{prefix}{task['description']} ({due_date_str})"
-                todo_win.addstr(i+1, 2, task_str, style)
-            project = todo.projects[todo.project_selection]
-            sort_indicator = "↑" if not project.sort_reverse else "↓"
-            header = f"Todos - {project.name} (Sorted by: {project.sort_by} {sort_indicator})"
-        else:
-            header = "Todos - No Project"
-        todo_win.addstr(0, 2, header)
+                display_str = format_todo_display(task)
+                todo_win.addstr(i+1, 2, display_str, style)
 
         stdscr.refresh()
         project_win.refresh()
         todo_win.refresh()
 
         key = stdscr.getch()
-        if key == ord('q'):
+        if key == ord('h'):
+            todo.toggle_completed_visibility()
+        elif key == ord('q'):
             break
         elif key == ord('\t'):
             todo.active_window = 'todos' if todo.active_window == 'projects' else 'projects'
@@ -315,6 +482,9 @@ def main(stdscr):
                 todo.toggle_sort('description')
             elif sort_key == ord('d'):
                 todo.toggle_sort('due_date')
+        elif key == ord('t'):
+            todo.theme_manager.toggle_theme()
+pass
 
 if __name__ == "__main__":
     curses.wrapper(main)

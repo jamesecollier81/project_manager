@@ -2,7 +2,6 @@ import curses
 import json
 from datetime import datetime, timedelta
 
-# Theme choice between "nord", "github", and "matrix"
 class ThemeManager:
     def __init__(self):
         self.current_theme = "nord"
@@ -12,7 +11,7 @@ class ThemeManager:
         curses.init_color(1, 180, 190, 210)
         curses.init_color(2, 220, 230, 250)
         curses.init_color(3, 260, 270, 290)
-        curses.init_color(4, 900, 910, 930)
+        curses.init_color(4, 900, 910, 930)  # Brightened default text color
         curses.init_color(5, 940, 950, 960)
         curses.init_color(6, 970, 980, 990)
         curses.init_color(7, 600, 800, 780)
@@ -30,28 +29,27 @@ class ThemeManager:
         curses.init_pair(3, 11, 0)  # Red for overdue
         curses.init_pair(4, 8, 0)   # Ice blue for headers
         curses.init_pair(5, 9, 0)   # Blue for selection
-        curses.init_pair(6, 4, 0)   # Default text
-        curses.init_pair(7, 15, 0)  # Purple for high priority
-        curses.init_pair(8, 7, 0)   # Mint for tags
+        curses.init_pair(6, 15, 0)  # Changed to bright purple-white for better visibility
 
-    def init_github_theme(self):
-        # GitHub dark colors
-        curses.init_color(0, 150, 150, 150)   # Dark gray background
-        curses.init_color(1, 900, 900, 900)   # Light gray for text
-        curses.init_color(2, 0, 450, 0)       # GitHub green
-        curses.init_color(3, 841, 494, 0)     # GitHub orange
-        curses.init_color(4, 800, 0, 0)       # GitHub red
-        curses.init_color(5, 0, 366, 800)     # GitHub blue
-        curses.init_color(6, 586, 266, 800)   # GitHub purple
+    def init_atom_dark_theme(self):
+        # Atom One Dark colors
+        curses.init_color(0, 157, 165, 180)   # Background #282C34
+        curses.init_color(1, 1000, 1000, 1000)  # Brightened default text to pure white
+        curses.init_color(2, 552, 823, 552)   # Green #8DC28D
+        curses.init_color(3, 913, 725, 525)   # Orange #E9B984
+        curses.init_color(4, 898, 450, 450)   # Red #E57373
+        curses.init_color(5, 400, 627, 913)   # Blue #66A0E9
+        curses.init_color(6, 788, 572, 933)   # Purple #C992EE
+        curses.init_color(7, 552, 784, 745)   # Cyan #8DC8BE
         
         curses.init_pair(1, 2, 0)   # Green for completed
         curses.init_pair(2, 3, 0)   # Orange for in progress
         curses.init_pair(3, 4, 0)   # Red for overdue
         curses.init_pair(4, 5, 0)   # Blue for headers
-        curses.init_pair(5, 5, 0)   # Blue for selection
-        curses.init_pair(6, 1, 0)   # Light gray for default text
+        curses.init_pair(5, 6, 0)   # Purple for selection
+        curses.init_pair(6, 1, 0)   # Pure white for default text
         curses.init_pair(7, 6, 0)   # Purple for high priority
-        curses.init_pair(8, 5, 0)   # Blue for tags
+        curses.init_pair(8, 7, 0)   # Cyan for tags
 
     def init_matrix_theme(self):
         curses.init_color(0, 0, 0, 0)         # Pure black
@@ -65,20 +63,20 @@ class ThemeManager:
         curses.init_pair(3, 3, 0)   # Dark green for overdue
         curses.init_pair(4, 1, 0)   # Bright green for headers
         curses.init_pair(5, 1, 0)   # Bright green for selection
-        curses.init_pair(6, 2, 0)   # Medium green for default text
+        curses.init_pair(6, 1, 0)   # Changed to bright green for default text
         curses.init_pair(7, 1, 0)   # Bright green for high priority
         curses.init_pair(8, 4, 0)   # Darker green for tags
 
     def toggle_theme(self):
-        themes = ["nord", "github", "matrix"]
+        themes = ["nord", "atom-dark", "matrix"]
         current_index = themes.index(self.current_theme)
         next_index = (current_index + 1) % len(themes)
         self.current_theme = themes[next_index]
         
         if self.current_theme == "nord":
             self.init_nord_theme()
-        elif self.current_theme == "github":
-            self.init_github_theme()
+        elif self.current_theme == "atom-dark":
+            self.init_atom_dark_theme()
         else:
             self.init_matrix_theme()
 
@@ -105,11 +103,15 @@ class Project:
 
     def sort_todos(self):
         sort_keys = {
-            'description': lambda x: x['description'].lower(),
-            'due_date': lambda x: x['due_date'] or '9999-12-31',
-            'priority': lambda x: {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')],
-            'created': lambda x: x['created_at']
-        }
+        'description': lambda x: (x['completed'], x['description'].lower()),
+        'due_date': lambda x: (x['completed'], x['due_date'] or '9999-12-31'),
+        'priority': lambda x: (x['completed'], {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')]),
+        'created': lambda x: (x['completed'], x['created_at'])
+    }
+    
+        if self.sort_by not in sort_keys:
+            self.sort_by = 'description'  # Default sort method
+            
         self.todos.sort(key=sort_keys[self.sort_by], reverse=self.sort_reverse)
 
     def edit_todo(self, new_description=None, new_due_date=None):
@@ -129,7 +131,7 @@ class TodoManager:
         self.active_window = 'projects'
         self.project_selection = 0
         self.todo_selection = 0
-        self.show_completed = True  # Flag to control completed tasks visibility
+        self.show_completed = False
         self.load_data()
         self.theme_manager = ThemeManager()
 
@@ -144,12 +146,13 @@ class TodoManager:
             self.projects = [Project("Default")]
 
     def get_visible_todos(self):
-        """Returns filtered list of todos based on current settings"""
         if not self.projects:
             return []
         todos = self.projects[self.project_selection].todos
+        
+        # Apply completed filter if needed
         if not self.show_completed:
-            todos = [todo for todo in todos if not todo['completed']]
+            todos = [todo for todo in todos if not todo['completed']]    
         return todos
 
     def toggle_completed_visibility(self):
@@ -176,7 +179,8 @@ class TodoManager:
             'description': description,
             'completed': False,
             'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'due_date': due_date
+            'due_date': due_date,
+            'priority': 'medium'  # Default priority
         }
         self.projects[self.project_selection].todos.append(todo)
         self.save_data()
@@ -252,40 +256,6 @@ def get_todo_display_style(todo):
         return curses.color_pair(7)  # Purple for high priority
     return curses.color_pair(6)  # Default style
 
-def draw_todo(win, todo, y, x, selected=False):
-    """Enhanced todo item display with priority, tags, and due date"""
-    style = get_todo_display_style(todo)
-    if selected:
-        style |= curses.A_REVERSE
-    
-    # Status indicator
-    prefix = "✓ " if todo.completed else "☐ "
-    
-    # Priority indicator
-    priority_markers = {"high": "❗", "medium": "●", "low": "○"}
-    priority_mark = priority_markers[todo.priority]
-    
-    # Format tags
-    tags_str = " ".join([f"#{tag}" for tag in todo.tags]) if todo.tags else ""
-    
-    # Format due date with warning for approaching deadlines
-    due_date_str = ""
-    if todo.due_date:
-        due_date = datetime.strptime(todo.due_date, "%Y-%m-%d")
-        days_left = (due_date.date() - datetime.now().date()).days
-        if days_left <= 3 and days_left >= 0:
-            due_date_str = f"⚠ Due in {days_left} days"
-        else:
-            due_date_str = f"Due: {todo.due_date}"
-    
-    # Combine all elements
-    display_str = f"{prefix}{priority_mark} {todo.description}"
-    if tags_str:
-        display_str += f" [{tags_str}]"
-    if due_date_str:
-        display_str += f" ({due_date_str})"
-    
-    win.addstr(y, x, display_str[:win.getmaxyx()[1]-2], style)
 def get_visible_todos(self):
         """Returns filtered list of todos based on current settings"""
         if not self.projects:
@@ -328,17 +298,21 @@ def format_todo_display(todo):
             today = datetime.now().date()
             days_until_due = (due_date - today).days
             
-            if days_until_due < 0:
-                due_date_str = f" ⚠ Overdue by {abs(days_until_due)} days"
-            elif days_until_due == 0:
-                due_date_str = " ⚠ Due today!"
-            elif days_until_due <= 2:
-                due_date_str = f" ⚠ Due in {days_until_due} days"
+            if not todo['completed']:  # Only show warnings for incomplete tasks
+                if days_until_due < 0:
+                    due_date_str = f" ⚠ Overdue by {abs(days_until_due)} days"
+                elif days_until_due == 0:
+                    due_date_str = " ⚠ Due today!"
+                elif days_until_due <= 2:
+                    due_date_str = f" ⚠ Due in {days_until_due} days"
+                else:
+                    due_date_str = f" ({todo['due_date']})"
             else:
-                due_date_str = f" ({todo['due_date']})"
+                due_date_str = f" (Done: {todo['due_date']})"
         except ValueError:
             due_date_str = f" ({todo['due_date']})"
     
+    # Just combine status, description, and due date (no priority markers)
     return f"{prefix}{todo['description']}{due_date_str}"
 
 def main(stdscr):
@@ -356,7 +330,7 @@ def main(stdscr):
     
     # Set background for both windows
     project_win.bkgd(' ', curses.color_pair(6))
-    todo_win.bkgd(' ', curses.color_pair(6))
+    todo_win.bkgd(' ', curses.color_pair(6))    
 
     while True:
         stdscr.clear()
@@ -370,7 +344,7 @@ def main(stdscr):
         # Headers
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Switch theme (Nord/GitHub/Matrix) | [q] Quit"
+        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Switch theme | [q] Quit"
         stdscr.addstr(2, 0, commands)
 
         # Project window
@@ -405,7 +379,7 @@ def main(stdscr):
         project_win.refresh()
         todo_win.refresh()
 
-        key = stdscr.getch()
+        key = stdscr.getch() #key handling
         if key == ord('h'):
             todo.toggle_completed_visibility()
         elif key == ord('q'):
@@ -451,6 +425,23 @@ def main(stdscr):
             else:
                 todos = todo.projects[todo.project_selection].todos if todo.projects else []
                 todo.todo_selection = min(len(todos) - 1, todo.todo_selection + 1)
+                
+        elif key == ord('p') and todo.active_window == 'todos':
+            if todo.projects and todo.projects[todo.project_selection].todos:
+                stdscr.addstr(max_y-2, 0, "Set priority - (h)igh, (m)edium, (l)ow: ")
+                stdscr.clrtoeol()
+                priority_key = stdscr.getch()
+                
+                if priority_key in [ord('h'), ord('m'), ord('l')]:
+                    current_todo = todo.projects[todo.project_selection].todos[todo.todo_selection]
+                    if priority_key == ord('h'):
+                        current_todo['priority'] = 'high'
+                    elif priority_key == ord('m'):
+                        current_todo['priority'] = 'medium'
+                    else:
+                        current_todo['priority'] = 'low'
+                    todo.save_data()  # Call save_data() on the TodoManager instance
+
         elif key == ord('e') and todo.active_window == 'todos':
             if todo.projects and todo.projects[todo.project_selection].todos:
                 curses.echo()

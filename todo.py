@@ -4,6 +4,7 @@ import os
 import shutil
 from datetime import datetime, timedelta
 
+#curent themes: Nord, Atom Dark, and Matrix(dos like)
 class ThemeManager:
     def __init__(self):
         self.current_theme = "nord"
@@ -85,21 +86,25 @@ class Project:
     def __init__(self, name):
         self.name = name
         self.todos = []
-        self.sort_by = 'description'
+        self.sort_by = 'due_date'  # Changed default sort to due_date
         self.sort_reverse = False
 
     def sort_todos(self):
-        sort_keys = {
-            'description': lambda x: (x['completed'], x['description'].lower()),
-            'due_date': lambda x: (x['completed'], x['due_date'] or '9999-12-31'),
-            'priority': lambda x: (x['completed'], {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')]),
-            'created': lambda x: (x['completed'], x['created_at'])
-        }
+        def get_sort_key(todo):
+            completed = todo['completed']
+            if self.sort_by == 'due_date':
+                due_date = todo.get('due_date') or '9999-12-31'
+                return (completed, due_date)
+            elif self.sort_by == 'description':
+                return (completed, todo['description'].lower())
+            elif self.sort_by == 'priority':
+                priority_order = {'high': 0, 'medium': 1, 'low': 2}
+                return (completed, priority_order[todo.get('priority', 'medium')])
+            else:  # created
+                return (completed, todo['created_at'])
         
-        if self.sort_by not in sort_keys:
-            self.sort_by = 'due_date'
-            
-        self.todos.sort(key=sort_keys[self.sort_by], reverse=self.sort_reverse)
+        self.todos.sort(key=get_sort_key, reverse=self.sort_reverse)
+
 
 class TodoManager:
     def __init__(self):
@@ -112,6 +117,28 @@ class TodoManager:
         self.ensure_backup_directory()
         self.load_data()
         self.theme_manager = ThemeManager()
+
+    def add_todo(self, description, due_date=None):
+        if not self.projects:
+            return
+        todo = {
+            'description': description,
+            'completed': False,
+            'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'due_date': due_date,
+            'priority': 'medium'
+        }
+        self.projects[self.project_selection].todos.append(todo)
+        self.projects[self.project_selection].sort_todos()  # Sort after adding
+        self.save_data()
+
+    def toggle_todo(self):
+        if not self.projects or not self.projects[self.project_selection].todos:
+            return
+        todos = self.projects[self.project_selection].todos
+        todos[self.todo_selection]['completed'] = not todos[self.todo_selection]['completed']
+        self.projects[self.project_selection].sort_todos()  # Sort after toggling
+        self.save_data()
 
     def ensure_backup_directory(self):
         """Create backup directory if it doesn't exist"""
@@ -163,26 +190,6 @@ class TodoManager:
 
     def add_project(self, name):
         self.projects.append(Project(name))
-        self.save_data()
-
-    def add_todo(self, description, due_date=None):
-        if not self.projects:
-            return
-        todo = {
-            'description': description,
-            'completed': False,
-            'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'due_date': due_date,
-            'priority': 'medium'
-        }
-        self.projects[self.project_selection].todos.append(todo)
-        self.save_data()
-
-    def toggle_todo(self):
-        if not self.projects or not self.projects[self.project_selection].todos:
-            return
-        todos = self.projects[self.project_selection].todos
-        todos[self.todo_selection]['completed'] = not todos[self.todo_selection]['completed']
         self.save_data()
 
     def delete_todo(self):

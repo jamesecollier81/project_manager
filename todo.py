@@ -1,5 +1,7 @@
 import curses
 import json
+import os
+import shutil
 from datetime import datetime, timedelta
 
 class ThemeManager:
@@ -32,15 +34,14 @@ class ThemeManager:
         curses.init_pair(6, 15, 0)  # Changed to bright purple-white for better visibility
 
     def init_atom_dark_theme(self):
-        # Atom One Dark colors
-        curses.init_color(0, 157, 165, 180)   # Background #282C34
-        curses.init_color(1, 1000, 1000, 1000)  # Brightened default text to pure white
-        curses.init_color(2, 552, 823, 552)   # Green #8DC28D
-        curses.init_color(3, 913, 725, 525)   # Orange #E9B984
-        curses.init_color(4, 898, 450, 450)   # Red #E57373
-        curses.init_color(5, 400, 627, 913)   # Blue #66A0E9
-        curses.init_color(6, 788, 572, 933)   # Purple #C992EE
-        curses.init_color(7, 552, 784, 745)   # Cyan #8DC8BE
+        curses.init_color(0, 157, 165, 180)   # Background
+        curses.init_color(1, 1000, 1000, 1000)  # Brightened default text
+        curses.init_color(2, 552, 823, 552)   # Green
+        curses.init_color(3, 913, 725, 525)   # Orange
+        curses.init_color(4, 898, 450, 450)   # Red
+        curses.init_color(5, 400, 627, 913)   # Blue
+        curses.init_color(6, 788, 572, 933)   # Purple
+        curses.init_color(7, 552, 784, 745)   # Cyan
         
         curses.init_pair(1, 2, 0)   # Green for completed
         curses.init_pair(2, 3, 0)   # Orange for in progress
@@ -80,50 +81,25 @@ class ThemeManager:
         else:
             self.init_matrix_theme()
 
-class Todo:
-    def __init__(self, description, due_date=None):
-        self.description = description
-        self.completed = False
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self.due_date = due_date
-        self.priority = "medium"  # New: priority level
-        self.tags = []           # New: tags for categorization
-        self.notes = ""          # New: additional notes
-        self.reminder = None     # New: reminder date/time
-        
 class Project:
     def __init__(self, name):
         self.name = name
         self.todos = []
         self.sort_by = 'description'
         self.sort_reverse = False
-        self.filter_completed = False  # New: option to hide completed tasks
-        self.filter_tags = []         # New: filter by tags
-        self.view_mode = 'all'        # New: view mode (all, today, week)
 
     def sort_todos(self):
         sort_keys = {
-        'description': lambda x: (x['completed'], x['description'].lower()),
-        'due_date': lambda x: (x['completed'], x['due_date'] or '9999-12-31'),
-        'priority': lambda x: (x['completed'], {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')]),
-        'created': lambda x: (x['completed'], x['created_at'])
-    }
-    
+            'description': lambda x: (x['completed'], x['description'].lower()),
+            'due_date': lambda x: (x['completed'], x['due_date'] or '9999-12-31'),
+            'priority': lambda x: (x['completed'], {'high': 0, 'medium': 1, 'low': 2}[x.get('priority', 'medium')]),
+            'created': lambda x: (x['completed'], x['created_at'])
+        }
+        
         if self.sort_by not in sort_keys:
-            self.sort_by = 'description'  # Default sort method
+            self.sort_by = 'due_date'
             
         self.todos.sort(key=sort_keys[self.sort_by], reverse=self.sort_reverse)
-
-    def edit_todo(self, new_description=None, new_due_date=None):
-        if not self.projects or not self.projects[self.project_selection].todos:
-            return
-        todo = self.projects[self.project_selection].todos[self.todo_selection]
-        if new_description:
-            todo['description'] = new_description
-        if new_due_date is not None:
-            todo['due_date'] = new_due_date if new_due_date else None
-        self.save_data()
-        self.projects[self.project_selection].sort_todos()
 
 class TodoManager:
     def __init__(self):
@@ -131,9 +107,28 @@ class TodoManager:
         self.active_window = 'projects'
         self.project_selection = 0
         self.todo_selection = 0
-        self.show_completed = False
+        self.show_completed = True
+        self.backup_dir = 'todo_backups'
+        self.ensure_backup_directory()
         self.load_data()
         self.theme_manager = ThemeManager()
+
+    def ensure_backup_directory(self):
+        """Create backup directory if it doesn't exist"""
+        if not os.path.exists(self.backup_dir):
+            os.makedirs(self.backup_dir)
+
+    def create_backup(self):
+        """Create a backup of the current projects.json file"""
+        if os.path.exists('projects.json'):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = os.path.join(self.backup_dir, f'projects_{timestamp}.json')
+            shutil.copy2('projects.json', backup_path)
+            
+            # Keep only the last 10 backups
+            backups = sorted([f for f in os.listdir(self.backup_dir) if f.startswith('projects_')])
+            while len(backups) > 10:
+                os.remove(os.path.join(self.backup_dir, backups.pop(0)))
 
     def load_data(self):
         try:
@@ -145,28 +140,26 @@ class TodoManager:
         except FileNotFoundError:
             self.projects = [Project("Default")]
 
+    def save_data(self):
+        """Save data with automatic backup"""
+        self.create_backup()  # Create backup before saving
+        data = [{'name': p.name, 'todos': p.todos} for p in self.projects]
+        with open('projects.json', 'w') as f:
+            json.dump(data, f)
+
     def get_visible_todos(self):
         if not self.projects:
             return []
         todos = self.projects[self.project_selection].todos
-        
-        # Apply completed filter if needed
         if not self.show_completed:
-            todos = [todo for todo in todos if not todo['completed']]    
+            todos = [todo for todo in todos if not todo['completed']]
         return todos
 
     def toggle_completed_visibility(self):
-        """Toggle whether completed tasks are shown"""
         self.show_completed = not self.show_completed
-        # Adjust selection if current todo is now hidden
         visible_todos = self.get_visible_todos()
         if self.todo_selection >= len(visible_todos):
             self.todo_selection = max(0, len(visible_todos) - 1)
-
-    def save_data(self):
-        data = [{'name': p.name, 'todos': p.todos} for p in self.projects]
-        with open('projects.json', 'w') as f:
-            json.dump(data, f)
 
     def add_project(self, name):
         self.projects.append(Project(name))
@@ -180,7 +173,7 @@ class TodoManager:
             'completed': False,
             'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
             'due_date': due_date,
-            'priority': 'medium'  # Default priority
+            'priority': 'medium'
         }
         self.projects[self.project_selection].todos.append(todo)
         self.save_data()
@@ -201,21 +194,37 @@ class TodoManager:
             self.todo_selection = max(0, len(todos) - 1)
         self.save_data()
 
-    def delete_project(self):
+    def delete_project(self, stdscr=None):
         if not self.projects:
-            return
-        del self.projects[self.project_selection]
-        if self.project_selection >= len(self.projects):
-            self.project_selection = max(0, len(self.projects) - 1)
-        self.save_data()
+            return False
         
+        if stdscr:
+            max_y, max_x = stdscr.getmaxyx()
+            project_name = self.projects[self.project_selection].name
+            stdscr.addstr(max_y-2, 0, f"Are you sure you want to delete project '{project_name}'? (y/n): ")
+            stdscr.clrtoeol()
+            stdscr.refresh()
+            
+            while True:
+                confirm = stdscr.getch()
+                if confirm == ord('y'):
+                    self.create_backup()  # Create backup before deletion
+                    del self.projects[self.project_selection]
+                    if self.project_selection >= len(self.projects):
+                        self.project_selection = max(0, len(self.projects) - 1)
+                    self.save_data()
+                    return True
+                elif confirm == ord('n'):
+                    return False
+        return False
+
     def edit_todo(self, new_description=None, new_due_date=None):
         if not self.projects or not self.projects[self.project_selection].todos:
             return
         todo = self.projects[self.project_selection].todos[self.todo_selection]
         if new_description:
             todo['description'] = new_description
-        if new_due_date is not None:  # Allow empty string to clear due date
+        if new_due_date is not None:
             todo['due_date'] = new_due_date if new_due_date else None
         self.projects[self.project_selection].sort_todos()
         self.save_data()
@@ -231,8 +240,35 @@ class TodoManager:
             project.sort_reverse = False
         project.sort_todos()
 
+    def restore_backup(self, backup_file=None):
+        """Restore from a backup file"""
+        if backup_file is None:
+            # Get the most recent backup
+            backups = sorted([f for f in os.listdir(self.backup_dir) if f.startswith('projects_')])
+            if not backups:
+                return False
+            backup_file = backups[-1]
+        
+        backup_path = os.path.join(self.backup_dir, backup_file)
+        if os.path.exists(backup_path):
+            # Create a backup of current state before restoring
+            self.create_backup()
+            # Restore from backup
+            shutil.copy2(backup_path, 'projects.json')
+            self.load_data()
+            return True
+        return False
+
+    def list_backups(self):
+        """Return a list of available backups"""
+        if not os.path.exists(self.backup_dir):
+            return []
+        return sorted([f for f in os.listdir(self.backup_dir) if f.startswith('projects_')])
+
 def parse_due_date(date_str):
     try:
+        if not date_str:
+            return None
         if date_str.lower() == 'today':
             return datetime.now().strftime("%Y-%m-%d")
         elif date_str.lower() == 'tomorrow':
@@ -244,31 +280,9 @@ def parse_due_date(date_str):
     except ValueError:
         return None
 
-def get_todo_display_style(todo):
-    """Enhanced styling based on todo status and priority"""
-    if todo.completed:
-        return curses.color_pair(1)  # Green for completed
-    if todo.due_date:
-        due_date = datetime.strptime(todo.due_date, "%Y-%m-%d")
-        if due_date.date() < datetime.now().date():
-            return curses.color_pair(3)  # Red for overdue
-    if todo.priority == "high":
-        return curses.color_pair(7)  # Purple for high priority
-    return curses.color_pair(6)  # Default style
-
-def get_visible_todos(self):
-        """Returns filtered list of todos based on current settings"""
-        if not self.projects:
-            return []
-        todos = self.projects[self.project_selection].todos
-        if not self.show_completed:
-            todos = [todo for todo in todos if not todo['completed']]
-        return todos
-
 def get_todo_style(todo):
-    """Get the appropriate color style for a todo item"""
     if todo['completed']:
-        return curses.color_pair(1)  # Green for completed
+        return curses.color_pair(1)
     
     if todo.get('due_date'):
         try:
@@ -286,11 +300,8 @@ def get_todo_style(todo):
     return curses.color_pair(6)  # Default style
 
 def format_todo_display(todo):
-    """Format todo item with visual indicators"""
-    # Status indicator
     prefix = "✓ " if todo['completed'] else "☐ "
     
-    # Due date formatting with warning
     due_date_str = ""
     if todo.get('due_date'):
         try:
@@ -298,7 +309,7 @@ def format_todo_display(todo):
             today = datetime.now().date()
             days_until_due = (due_date - today).days
             
-            if not todo['completed']:  # Only show warnings for incomplete tasks
+            if not todo['completed']:
                 if days_until_due < 0:
                     due_date_str = f" ⚠ Overdue by {abs(days_until_due)} days"
                 elif days_until_due == 0:
@@ -312,23 +323,20 @@ def format_todo_display(todo):
         except ValueError:
             due_date_str = f" ({todo['due_date']})"
     
-    # Just combine status, description, and due date (no priority markers)
     return f"{prefix}{todo['description']}{due_date_str}"
 
 def main(stdscr):
     curses.start_color()
     curses.curs_set(0)
     
-    todo = TodoManager()  # Create TodoManager first
-    todo.theme_manager.init_nord_theme()  # Then initialize theme
+    todo = TodoManager()
+    todo.theme_manager.init_nord_theme()
     
     max_y, max_x = stdscr.getmaxyx()
     
-    # Create windows with Nord theme background
     project_win = curses.newwin(max_y-3, max_x//3, 3, 0)
     todo_win = curses.newwin(max_y-3, (2*max_x//3)-1, 3, max_x//3+1)
     
-    # Set background for both windows
     project_win.bkgd(' ', curses.color_pair(6))
     todo_win.bkgd(' ', curses.color_pair(6))    
 
@@ -337,36 +345,30 @@ def main(stdscr):
         project_win.clear()
         todo_win.clear()
 
-        # Draw borders
         project_win.border()
         todo_win.border()
 
-        # Headers
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Switch theme | [q] Quit"
+        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Theme | [r] Restore backup | [q] Quit"
         stdscr.addstr(2, 0, commands)
 
-        # Project window
         project_win.addstr(0, 2, "Projects")
         for i, project in enumerate(todo.projects):
             style = curses.A_REVERSE if i == todo.project_selection and todo.active_window == 'projects' else curses.A_NORMAL
             project_win.addstr(i+1, 2, f"• {project.name}", style)
 
-        # Todo window
         todo_win.addstr(0, 2, f"Todos - {todo.projects[todo.project_selection].name if todo.projects else 'No Project'}")
         if todo.projects:
             visible_todos = todo.get_visible_todos()
             completed_count = len([t for t in todo.projects[todo.project_selection].todos if t['completed']])
             total_count = len(todo.projects[todo.project_selection].todos)
             
-            # Update header to show task counts
             header = f"Todos - {todo.projects[todo.project_selection].name} ({completed_count}/{total_count} completed)"
             if not todo.show_completed:
                 header += " (hiding completed)"
             todo_win.addstr(0, 2, header)
 
-            # Display todos with enhanced formatting
             for i, task in enumerate(visible_todos):
                 style = get_todo_style(task)
                 if i == todo.todo_selection and todo.active_window == 'todos':
@@ -379,7 +381,7 @@ def main(stdscr):
         project_win.refresh()
         todo_win.refresh()
 
-        key = stdscr.getch() #key handling
+        key = stdscr.getch()
         if key == ord('h'):
             todo.toggle_completed_visibility()
         elif key == ord('q'):
@@ -392,14 +394,17 @@ def main(stdscr):
             
             if todo.active_window == 'projects':
                 stdscr.addstr(max_y-2, 0, "Enter project name: ")
+                stdscr.clrtoeol()
                 name = stdscr.getstr().decode('utf-8')
                 if name:
                     todo.add_project(name)
             else:
                 if todo.projects:
                     stdscr.addstr(max_y-2, 0, "Enter todo description: ")
+                    stdscr.clrtoeol()
                     description = stdscr.getstr().decode('utf-8')
                     stdscr.addstr(max_y-1, 0, "Enter due date (YYYY-MM-DD/today/tomorrow/next week, or leave empty): ")
+                    stdscr.clrtoeol()
                     due_date_str = stdscr.getstr().decode('utf-8')
                     if description:
                         due_date = parse_due_date(due_date_str) if due_date_str else None
@@ -409,11 +414,12 @@ def main(stdscr):
             curses.curs_set(0)
         elif key == ord('d'):
             if todo.active_window == 'projects':
-                todo.delete_project()
+                todo.delete_project(stdscr)
             else:
                 todo.delete_todo()
-        elif key == ord(' ') and todo.active_window == 'todos':
-            todo.toggle_todo()
+        elif key == ord(' '):
+            if todo.active_window == 'todos':
+                todo.toggle_todo()
         elif key == curses.KEY_UP:
             if todo.active_window == 'projects':
                 todo.project_selection = max(0, todo.project_selection - 1)
@@ -423,25 +429,8 @@ def main(stdscr):
             if todo.active_window == 'projects':
                 todo.project_selection = min(len(todo.projects) - 1, todo.project_selection + 1)
             else:
-                todos = todo.projects[todo.project_selection].todos if todo.projects else []
-                todo.todo_selection = min(len(todos) - 1, todo.todo_selection + 1)
-                
-        elif key == ord('p') and todo.active_window == 'todos':
-            if todo.projects and todo.projects[todo.project_selection].todos:
-                stdscr.addstr(max_y-2, 0, "Set priority - (h)igh, (m)edium, (l)ow: ")
-                stdscr.clrtoeol()
-                priority_key = stdscr.getch()
-                
-                if priority_key in [ord('h'), ord('m'), ord('l')]:
-                    current_todo = todo.projects[todo.project_selection].todos[todo.todo_selection]
-                    if priority_key == ord('h'):
-                        current_todo['priority'] = 'high'
-                    elif priority_key == ord('m'):
-                        current_todo['priority'] = 'medium'
-                    else:
-                        current_todo['priority'] = 'low'
-                    todo.save_data()  # Call save_data() on the TodoManager instance
-
+                visible_todos = todo.get_visible_todos()
+                todo.todo_selection = min(len(visible_todos) - 1, todo.todo_selection + 1)
         elif key == ord('e') and todo.active_window == 'todos':
             if todo.projects and todo.projects[todo.project_selection].todos:
                 curses.echo()
@@ -475,7 +464,26 @@ def main(stdscr):
                 todo.toggle_sort('due_date')
         elif key == ord('t'):
             todo.theme_manager.toggle_theme()
-pass
+        elif key == ord('r'):  # Restore backup functionality
+            if todo.active_window == 'projects':
+                backups = todo.list_backups()
+                if backups:
+                    curses.echo()
+                    curses.curs_set(1)
+                    stdscr.addstr(max_y-2, 0, "Enter backup number to restore (0 for most recent): ")
+                    stdscr.clrtoeol()
+                    try:
+                        choice = stdscr.getstr().decode('utf-8')
+                        if choice.strip() == '':
+                            todo.restore_backup()
+                        else:
+                            backup_idx = int(choice)
+                            if 0 <= backup_idx < len(backups):
+                                todo.restore_backup(backups[-(backup_idx+1)])
+                    except ValueError:
+                        pass
+                    curses.noecho()
+                    curses.curs_set(0)
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    curses.wrapper(main)                   

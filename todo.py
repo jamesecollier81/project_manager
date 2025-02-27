@@ -118,7 +118,7 @@ class TodoManager:
         self.load_data()
         self.theme_manager = ThemeManager()
 
-    def add_todo(self, description, due_date=None):
+    def add_todo(self, description, due_date=None, priority='medium'):
         if not self.projects:
             return
         todo = {
@@ -126,12 +126,28 @@ class TodoManager:
             'completed': False,
             'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
             'due_date': due_date,
-            'priority': 'medium'
+            'priority': priority
         }
         self.projects[self.project_selection].todos.append(todo)
-        self.projects[self.project_selection].sort_todos()  # Sort after adding
+        self.projects[self.project_selection].sort_todos()
         self.save_data()
 
+    def cycle_priority(self):
+        if not self.projects or not self.projects[self.project_selection].todos:
+            return
+            
+        todo = self.projects[self.project_selection].todos[self.todo_selection]
+        priorities = ['low', 'medium', 'high']
+        current_priority = todo.get('priority', 'medium')
+        
+        # Find current index and get next priority
+        current_index = priorities.index(current_priority)
+        next_index = (current_index + 1) % len(priorities)
+        todo['priority'] = priorities[next_index]
+        
+        self.projects[self.project_selection].sort_todos()
+        self.save_data()
+        
     def toggle_todo(self):
         if not self.projects or not self.projects[self.project_selection].todos:
             return
@@ -225,7 +241,7 @@ class TodoManager:
                     return False
         return False
 
-    def edit_todo(self, new_description=None, new_due_date=None):
+    def edit_todo(self, new_description=None, new_due_date=None, new_priority=None):
         if not self.projects or not self.projects[self.project_selection].todos:
             return
         todo = self.projects[self.project_selection].todos[self.todo_selection]
@@ -233,6 +249,8 @@ class TodoManager:
             todo['description'] = new_description
         if new_due_date is not None:
             todo['due_date'] = new_due_date if new_due_date else None
+        if new_priority:
+            todo['priority'] = new_priority
         self.projects[self.project_selection].sort_todos()
         self.save_data()
 
@@ -307,7 +325,16 @@ def get_todo_style(todo):
     return curses.color_pair(6)  # Default style
 
 def format_todo_display(todo):
+    # Priority indicators
+    priority_indicators = {
+        'high': '*** ',
+        'medium': '** ',
+        'low': '* ',
+    }
+    
     prefix = "✓ " if todo['completed'] else "☐ "
+    priority = todo.get('priority', 'medium')
+    priority_prefix = priority_indicators[priority] if not todo['completed'] else ""
     
     due_date_str = ""
     if todo.get('due_date'):
@@ -330,8 +357,9 @@ def format_todo_display(todo):
         except ValueError:
             due_date_str = f" ({todo['due_date']})"
     
-    return f"{prefix}{todo['description']}{due_date_str}"
+    return f"{prefix}{priority_prefix}{todo['description']}{due_date_str}"
 
+    
 def main(stdscr):
     curses.start_color()
     curses.curs_set(0)
@@ -357,7 +385,7 @@ def main(stdscr):
 
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [s] Sort | [h] Hide/Show completed | [t] Theme | [r] Restore backup | [q] Quit"
+        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [p] Priority | [s] Sort | [h] Hide/Show completed | [t] Theme | [r] Restore backup | [q] Quit"
         stdscr.addstr(2, 0, commands)
 
         project_win.addstr(0, 2, "Projects")
@@ -413,9 +441,21 @@ def main(stdscr):
                     stdscr.addstr(max_y-1, 0, "Enter due date (YYYY-MM-DD/today/tomorrow/next week, or leave empty): ")
                     stdscr.clrtoeol()
                     due_date_str = stdscr.getstr().decode('utf-8')
+                    
+                    stdscr.clear()
+                    stdscr.addstr(max_y-2, 0, "Set priority (h)igh, (m)edium, (l)ow: ")
+                    stdscr.clrtoeol()
+                    priority_key = stdscr.getch()
+                    
+                    priority = 'medium'  # Default
+                    if priority_key == ord('h'):
+                        priority = 'high'
+                    elif priority_key == ord('l'):
+                        priority = 'low'
+                    
                     if description:
                         due_date = parse_due_date(due_date_str) if due_date_str else None
-                        todo.add_todo(description, due_date)
+                        todo.add_todo(description, due_date, priority)
             
             curses.noecho()
             curses.curs_set(0)
@@ -424,6 +464,8 @@ def main(stdscr):
                 todo.delete_project(stdscr)
             else:
                 todo.delete_todo()
+        elif key == ord('p') and todo.active_window == 'todos':
+                todo.cycle_priority()
         elif key == ord(' '):
             if todo.active_window == 'todos':
                 todo.toggle_todo()
@@ -452,23 +494,39 @@ def main(stdscr):
                 stdscr.clrtoeol()
                 new_date_str = stdscr.getstr().decode('utf-8')
                 
-                if new_desc or new_date_str:
+                stdscr.clear()
+                stdscr.addstr(max_y-2, 0, "Edit priority (h)igh, (m)edium, (l)ow, or leave empty to keep current: ")
+                stdscr.clrtoeol()
+                priority_key = stdscr.getch()
+                
+                new_priority = None
+                if priority_key == ord('h'):
+                    new_priority = 'high'
+                elif priority_key == ord('m'):
+                    new_priority = 'medium'
+                elif priority_key == ord('l'):
+                    new_priority = 'low'
+                
+                if new_desc or new_date_str or new_priority:
                     new_date = parse_due_date(new_date_str) if new_date_str else current_todo.get('due_date')
                     todo.edit_todo(
                         new_description=new_desc if new_desc else current_todo['description'],
-                        new_due_date=new_date
+                        new_due_date=new_date,
+                        new_priority=new_priority
                     )
                 
                 curses.noecho()
                 curses.curs_set(0)
         elif key == ord('s') and todo.active_window == 'todos':
-            stdscr.addstr(max_y-2, 0, "Sort by (n)ame or (d)ue date?: ")
+            stdscr.addstr(max_y-2, 0, "Sort by (n)ame, (d)ue date, or (p)riority?: ")
             stdscr.clrtoeol()
             sort_key = stdscr.getch()
             if sort_key == ord('n'):
                 todo.toggle_sort('description')
             elif sort_key == ord('d'):
                 todo.toggle_sort('due_date')
+            elif sort_key == ord('p'):
+                todo.toggle_sort('priority')
         elif key == ord('t'):
             todo.theme_manager.toggle_theme()
         elif key == ord('r'):  # Restore backup functionality

@@ -97,9 +97,28 @@ class ThemeManager:
         curses.init_pair(6, 1, 0)   # Changed to bright green for default text
         curses.init_pair(7, 1, 0)   # Bright green for high priority
         curses.init_pair(8, 4, 0)   # Darker green for tags
+    
+    def init_dracula_theme(self):
+        curses.init_color(0, 157, 158, 172)   # Background
+        curses.init_color(1, 980, 976, 925)   # White
+        curses.init_color(2, 556, 972, 509)   # Green
+        curses.init_color(3, 980, 647, 529)   # Orange
+        curses.init_color(4, 980, 474, 509)   # Pink
+        curses.init_color(5, 388, 611, 996)   # Purple
+        curses.init_color(6, 733, 737, 956)   # Comment
+        curses.init_color(7, 964, 890, 690)   # Yellow
+
+        curses.init_pair(1, 2, 0)   # Green for completed
+        curses.init_pair(2, 7, 0)   # Yellow for in progress
+        curses.init_pair(3, 4, 0)   # Pink for overdue
+        curses.init_pair(4, 5, 0)   # Purple for headers
+        curses.init_pair(5, 3, 0)   # Orange for selection
+        curses.init_pair(6, 1, 0)   # White for default text
+        curses.init_pair(7, 4, 0)   # Pink for high priority
+        curses.init_pair(8, 6, 0)   # Comment color for tags
 
     def toggle_theme(self):
-        themes = ["nord", "atom-dark", "matrix"]
+        themes = ["nord", "atom-dark", "matrix", "dracula"]
         current_index = themes.index(self.current_theme)
         next_index = (current_index + 1) % len(themes)
         self.current_theme = themes[next_index]
@@ -108,8 +127,10 @@ class ThemeManager:
             self.init_nord_theme()
         elif self.current_theme == "atom-dark":
             self.init_atom_dark_theme()
-        else:
+        elif self.current_theme == "matrix":
             self.init_matrix_theme()
+        else:
+            self.init_dracula_theme()
 
 class Project:
     def __init__(self, name):

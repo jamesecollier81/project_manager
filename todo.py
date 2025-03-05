@@ -3,7 +3,36 @@ import json
 import os
 import shutil
 from datetime import datetime, timedelta
+import copy
+from typing import List, Set, Optional
 
+class UndoManager:
+    def __init__(self, max_history: int = 50):
+        self.undo_stack = []
+        self.redo_stack = []
+        self.max_history = max_history
+    
+    def push_state(self, state):
+        """Save current state to undo stack"""
+        self.undo_stack.append(copy.deepcopy(state))
+        self.redo_stack.clear()  # Clear redo stack when new action is performed
+        if len(self.undo_stack) > self.max_history:
+            self.undo_stack.pop(0)
+    
+    def undo(self, current_state) -> Optional[dict]:
+        """Undo last action"""
+        if self.undo_stack:
+            self.redo_stack.append(copy.deepcopy(current_state))
+            return self.undo_stack.pop()
+        return None
+    
+    def redo(self, current_state) -> Optional[dict]:
+        """Redo last undone action"""
+        if self.redo_stack:
+            self.undo_stack.append(copy.deepcopy(current_state))
+            return self.redo_stack.pop()
+        return None
+    
 #curent themes: Nord, Atom Dark, and Matrix(dos like)
 class ThemeManager:
     def __init__(self):
@@ -88,6 +117,7 @@ class Project:
         self.todos = []
         self.sort_by = 'due_date'  # Changed default sort to due_date
         self.sort_reverse = False
+        self.categories: Set[str] = set()
 
     def sort_todos(self):
         def get_sort_key(todo):
@@ -104,6 +134,7 @@ class Project:
                 return (completed, todo['created_at'])
         
         self.todos.sort(key=get_sort_key, reverse=self.sort_reverse)
+    
 
 
 class TodoManager:
@@ -117,20 +148,74 @@ class TodoManager:
         self.ensure_backup_directory()
         self.load_data()
         self.theme_manager = ThemeManager()
+        self.undo_manager = UndoManager()
 
-    def add_todo(self, description, due_date=None, priority='medium'):
-        if not self.projects:
-            return
+    def save_state(self):
+        """Save current state for undo/redo"""
+        state = {
+            'projects': [{
+                'name': p.name,
+                'todos': copy.deepcopy(p.todos),
+                'sort_by': p.sort_by,
+                'sort_reverse': p.sort_reverse,
+                'categories': list(p.categories)
+            } for p in self.projects],
+            'project_selection': self.project_selection,
+            'todo_selection': self.todo_selection,
+            'show_completed': self.show_completed
+        }
+        self.undo_manager.push_state(state)
+
+    def restore_state(self, state):
+        """Restore from a saved state"""
+        if not state:
+            return False
+            
+        self.projects = []
+        for p in state['projects']:
+            project = Project(p['name'])
+            project.todos = p['todos']
+            project.sort_by = p['sort_by']
+            project.sort_reverse = p['sort_reverse']
+            project.categories = set(p['categories'])
+            self.projects.append(project)
+            
+        self.project_selection = state['project_selection']
+        self.todo_selection = state['todo_selection']
+        self.show_completed = state['show_completed']
+        return True
+
+    def add_todo(self, description: str, due_date: Optional[str] = None, 
+                priority: str = 'medium', categories: List[str] = None) -> None:
+        self.save_state()  # Save state before modification
+        categories = categories or []
+        
         todo = {
             'description': description,
             'completed': False,
             'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
             'due_date': due_date,
-            'priority': priority
+            'priority': priority,
+            'categories': categories
         }
         self.projects[self.project_selection].todos.append(todo)
         self.projects[self.project_selection].sort_todos()
         self.save_data()
+
+    def search_todos(self, query: str):
+        """Search todos across all projects"""
+        results = []
+        query = query.lower()
+        for project in self.projects:
+            for todo in project.todos:
+                # Add completion status check
+                if (query in todo['description'].lower() or
+                    any(query in cat.lower() for cat in todo.get('categories', [])) or
+                    query in todo.get('priority', '').lower() or
+                    (query == 'completed' and todo['completed']) or
+                    (query == 'pending' and not todo['completed'])):
+                    results.append((project.name, todo))
+        return results
 
     def cycle_priority(self):
         if not self.projects or not self.projects[self.project_selection].todos:
@@ -149,6 +234,7 @@ class TodoManager:
         self.save_data()
         
     def toggle_todo(self):
+        self.save_state()  # Save state before modification
         if not self.projects or not self.projects[self.project_selection].todos:
             return
         todos = self.projects[self.project_selection].todos
@@ -209,6 +295,7 @@ class TodoManager:
         self.save_data()
 
     def delete_todo(self):
+        self.save_state()  # Save state before modification
         if not self.projects or not self.projects[self.project_selection].todos:
             return
         todos = self.projects[self.project_selection].todos
@@ -242,6 +329,7 @@ class TodoManager:
         return False
 
     def edit_todo(self, new_description=None, new_due_date=None, new_priority=None):
+        self.save_state()  # Save state before modification
         if not self.projects or not self.projects[self.project_selection].todos:
             return
         todo = self.projects[self.project_selection].todos[self.todo_selection]
@@ -359,7 +447,40 @@ def format_todo_display(todo):
     
     return f"{prefix}{priority_prefix}{todo['description']}{due_date_str}"
 
+def draw_status_bar(stdscr, todo_manager):
+    """Draw status bar at bottom of screen with current context"""
+    height, width = stdscr.getmaxyx()
     
+    # Get current project info
+    active_project = (todo_manager.projects[todo_manager.project_selection].name 
+                     if todo_manager.projects else "No Project")
+    
+    # Get todo stats
+    if todo_manager.projects:
+        todos = todo_manager.projects[todo_manager.project_selection].todos
+        total = len(todos)
+        completed = len([t for t in todos if t['completed']])
+        progress = f"{completed}/{total}"
+    else:
+        progress = "0/0"
+
+    # Build status message
+    status = (f" Mode: {todo_manager.active_window.title()} | "
+             f"Project: {active_project} | "
+             f"Tasks: {progress} | "
+             f"Theme: {todo_manager.theme_manager.current_theme} ")
+    
+    # Pad with spaces to fill the width
+    status = status + " " * (width - len(status) - 1)
+    
+    # Draw the status bar with reverse colors for visibility
+    try:
+        stdscr.attron(curses.A_REVERSE)
+        stdscr.addstr(height-1, 0, status)
+        stdscr.attroff(curses.A_REVERSE)
+    except curses.error:
+        pass  # Ignore if status bar doesn't fit
+        
 def main(stdscr):
     curses.start_color()
     curses.curs_set(0)
@@ -369,8 +490,8 @@ def main(stdscr):
     
     max_y, max_x = stdscr.getmaxyx()
     
-    project_win = curses.newwin(max_y-3, max_x//3, 3, 0)
-    todo_win = curses.newwin(max_y-3, (2*max_x//3)-1, 3, max_x//3+1)
+    project_win = curses.newwin(max_y-4, max_x//3, 3, 0)
+    todo_win = curses.newwin(max_y-4, (2*max_x//3)-1, 3, max_x//3+1)
     
     project_win.bkgd(' ', curses.color_pair(6))
     todo_win.bkgd(' ', curses.color_pair(6))    
@@ -385,7 +506,9 @@ def main(stdscr):
 
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = "[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | [space] Toggle todo | [p] Priority | [s] Sort | [h] Hide/Show completed | [t] Theme | [r] Restore backup | [q] Quit"
+        commands = ("[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | "
+                   "[space] Toggle todo | [p] Priority | [s] Sort | [h] Hide/Show | "
+                   "[/] Search | [u] Undo | [Ctrl+r] Redo | [t] Theme | [q] Quit")
         stdscr.addstr(2, 0, commands)
 
         project_win.addstr(0, 2, "Projects")
@@ -415,8 +538,10 @@ def main(stdscr):
         stdscr.refresh()
         project_win.refresh()
         todo_win.refresh()
-
+        
+        draw_status_bar(stdscr, todo)
         key = stdscr.getch()
+
         if key == ord('h'):
             todo.toggle_completed_visibility()
         elif key == ord('q'):
@@ -526,9 +651,67 @@ def main(stdscr):
             elif sort_key == ord('d'):
                 todo.toggle_sort('due_date')
             elif sort_key == ord('p'):
-                todo.toggle_sort('priority')
+                todo.toggle_sort('priority')   
+        elif key == ord('/'):  # Add search functionality
+            curses.echo()
+            curses.curs_set(1)
+            max_y, max_x = stdscr.getmaxyx()
+            stdscr.addstr(max_y-2, 0, "Search: ")
+            stdscr.clrtoeol()
+            query = stdscr.getstr().decode('utf-8')
+            
+            if query:
+                results = todo.search_todos(query)
+                if results:
+                    # Create search results window
+                    search_win = curses.newwin(max_y-3, max_x-2, 3, 1)
+                    search_win.box()
+                    search_win.addstr(0, 2, f"Search Results for '{query}'")
+                    
+                    for i, (project_name, task) in enumerate(results, 1):
+                        if i >= max_y-5:  # Prevent overflow
+                            break
+                        display_str = f"{project_name}: {format_todo_display(task)}"
+                        search_win.addstr(i, 2, display_str, get_todo_style(task))
+                    
+                    search_win.refresh()
+                    search_win.getch()
+            
+            curses.noecho()
+            curses.curs_set(0)
         elif key == ord('t'):
             todo.theme_manager.toggle_theme()
+        elif key == ord('u'):  # Undo
+            current_state = {
+                'projects': [{
+                    'name': p.name,
+                    'todos': copy.deepcopy(p.todos),
+                    'sort_by': p.sort_by,
+                    'sort_reverse': p.sort_reverse,
+                    'categories': list(p.categories)
+                } for p in todo.projects],
+                'project_selection': todo.project_selection,
+                'todo_selection': todo.todo_selection,
+                'show_completed': todo.show_completed
+            }
+            if todo.restore_state(todo.undo_manager.undo(current_state)):
+                todo.save_data()
+                
+        elif key == ord('r') and key == curses.KEY_CTRL:  # Ctrl+R for Redo
+            current_state = {
+                'projects': [{
+                    'name': p.name,
+                    'todos': copy.deepcopy(p.todos),
+                    'sort_by': p.sort_by,
+                    'sort_reverse': p.sort_reverse,
+                    'categories': list(p.categories)
+                } for p in todo.projects],
+                'project_selection': todo.project_selection,
+                'todo_selection': todo.todo_selection,
+                'show_completed': todo.show_completed
+            }
+            if todo.restore_state(todo.undo_manager.redo(current_state)):
+                todo.save_data()
         elif key == ord('r'):  # Restore backup functionality
             if todo.active_window == 'projects':
                 backups = todo.list_backups()
@@ -551,4 +734,4 @@ def main(stdscr):
                     curses.curs_set(0)
 
 if __name__ == "__main__":
-    curses.wrapper(main)                   
+    curses.wrapper(main)

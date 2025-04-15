@@ -1,3 +1,4 @@
+#import needed libraries
 import curses
 import json
 import os
@@ -117,8 +118,29 @@ class ThemeManager:
         curses.init_pair(7, 4, 0)   # Pink for high priority
         curses.init_pair(8, 6, 0)   # Comment color for tags
 
+    def init_longhorns_theme(self):
+        # Texas Longhorns color values
+        curses.init_color(0, 51, 63, 78)      # Background #0D1117
+        curses.init_color(1, 788, 831, 866)   # Foreground #C9D1DC
+        curses.init_color(2, 600, 600, 600)   # Silver #999999
+        curses.init_color(3, 960, 784, 360)   # Yellow #F6C862
+        curses.init_color(4, 960, 549, 219)   # Orange #F68D38
+        curses.init_color(5, 474, 690, 960)   # Purple #79B0F5
+        curses.init_color(6, 360, 600, 960)   # Accent Blue #5C99F5
+        curses.init_color(7, 749, 341, 0)   # burnt orange #BF5700
+
+        # Define color pairs
+        curses.init_pair(1, 2, 0)   # Blue for completed
+        curses.init_pair(2, 3, 0)   # Yellow for in progress
+        curses.init_pair(3, 7, 0)   # Red for overdue
+        curses.init_pair(4, 5, 0)   # Purple for headers
+        curses.init_pair(5, 4, 0)   # Orange for selection
+        curses.init_pair(6, 1, 0)   # Default text color
+        curses.init_pair(7, 6, 0)   # Accent Blue for high priority
+        curses.init_pair(8, 2, 0)   # Blue for tags
+
     def toggle_theme(self):
-        themes = ["nord", "atom-dark", "matrix", "dracula"]
+        themes = ["nord", "atom-dark", "matrix", "dracula", "longhorns"]
         current_index = themes.index(self.current_theme)
         next_index = (current_index + 1) % len(themes)
         self.current_theme = themes[next_index]
@@ -129,8 +151,10 @@ class ThemeManager:
             self.init_atom_dark_theme()
         elif self.current_theme == "matrix":
             self.init_matrix_theme()
-        else:
+        elif self.current_theme == "dracula":
             self.init_dracula_theme()
+        else:
+            self.init_longhorns_theme()
 
 class Project:
     def __init__(self, name):
@@ -481,9 +505,10 @@ def draw_status_bar(stdscr, todo_manager):
         todos = todo_manager.projects[todo_manager.project_selection].todos
         total = len(todos)
         completed = len([t for t in todos if t['completed']])
-        progress = f"{completed}/{total}"
+        uncompleted = total - completed
+        progress = f"{completed}/{total} (Done: {completed}, Todo: {uncompleted})"
     else:
-        progress = "0/0"
+        progress = "0/0 (Done: 0, Todo: 0)"
 
     # Build status message
     status = (f" Mode: {todo_manager.active_window.title()} | "
@@ -501,7 +526,114 @@ def draw_status_bar(stdscr, todo_manager):
         stdscr.attroff(curses.A_REVERSE)
     except curses.error:
         pass  # Ignore if status bar doesn't fit
+
+def show_help_window(stdscr, todo_manager):
+    """Display help window with keyboard shortcuts"""
+    max_y, max_x = stdscr.getmaxyx()
+    
+    # Calculate window dimensions with bounds checking
+    height = min(30, max_y - 4)
+    width = min(70, max_x - 4)
+    start_y = (max_y - height) // 2
+    start_x = (max_x - width) // 2
+    
+    # Create a shadow window first with dark grey color
+    shadow_win = curses.newwin(height, width, start_y + 1, start_x + 1)
+    
+    # Initialize dark grey color if not already defined
+    try:
+        curses.init_color(16, 200, 200, 200)  # Dark grey (RGB values: 0-1000)
+        curses.init_pair(20, 16, 16)  # Create a new color pair for shadow
+        shadow_win.bkgd(' ', curses.color_pair(20))
+    except curses.error:
+        # Fallback to dim attribute if custom color fails
+        shadow_win.bkgd(' ', curses.A_DIM)
+    
+    shadow_win.refresh()
+    
+    # Create main help window on top of shadow
+    help_win = curses.newwin(height, width, start_y, start_x)
+    help_win.bkgd(' ', curses.color_pair(6))
+    
+    # Fill entire window with background (safely)
+    for y in range(height):
+        try:
+            help_win.addstr(y, 0, " " * (width - 1), curses.color_pair(6))
+        except curses.error:
+            pass
+    
+    help_win.box()
+    
+    # Draw help window
+    help_text = [
+        "Keyboard Shortcuts",
+        "─" * (width - 3),
+        "",
+        "Navigation",
+        " TAB      - Switch between Projects/Todos",
+        " ↑/↓      - Move selection up/down",
+        "",
+        "Other Actions",
+        " a        - Add project/todo",
+        " d        - Delete project/todo",
+        " e        - Edit todo",
+        " SPACE    - Toggle completion",
+        " p        - Cycle priority",
+        " s        - Sort todos",
+        " h        - Hide/show completed",
+        " /        - Search todos",
+        "",
+        "Other",
+        " t        - Change theme",
+        " u        - Undo",
+        " Ctrl+r   - Redo",
+        " r        - Restore backup",
+        " ?        - Show this help",
+        " q        - Quit"
+    ]
+    
+    try:
+        for i, line in enumerate(help_text):
+            if i >= height - 3:
+                break
+            
+            # Clear the line safely
+            help_win.addstr(i + 1, 1, " " * (width - 2), curses.color_pair(6))
+            
+            if i == 0:  # Title
+                pos_x = max(2, (width - len(line)) // 2)
+                help_win.attron(curses.A_BOLD | curses.color_pair(4))
+                help_win.addstr(i + 1, pos_x, line[:width-4])
+                help_win.attroff(curses.A_BOLD | curses.color_pair(4))
+            elif i == 1:  # Separator
+                help_win.addstr(i + 1, 2, line[:width-4], curses.color_pair(4))
+            elif line.strip() and not line.startswith(' '):  # Section headers
+                help_win.attron(curses.color_pair(4))
+                help_win.addstr(i + 1, 2, line[:width-4])
+                help_win.attroff(curses.color_pair(4))
+            else:  # Regular lines
+                help_win.addstr(i + 1, 2, line[:width-4])
         
+        # Footer
+        if height > 4:
+            footer = "Press any key to close"
+            footer_x = max(2, (width - len(footer)) // 2)
+            help_win.addstr(height-2, 1, " " * (width - 2), curses.color_pair(6))
+            help_win.addstr(height-2, footer_x, footer[:width-4], curses.color_pair(8))
+        
+        help_win.refresh()
+        shadow_win.refresh()
+        help_win.getch()
+        
+        # Clean up
+        help_win.clear()
+        help_win.refresh()
+        shadow_win.clear()
+        shadow_win.refresh()
+        
+    except curses.error:
+        pass
+
 def main(stdscr):
     curses.start_color()
     curses.curs_set(0)
@@ -527,18 +659,20 @@ def main(stdscr):
 
         stdscr.addstr(0, 0, "PROJECT MANAGER", curses.A_BOLD)
         stdscr.addstr(1, 0, "=" * max_x)
-        commands = ("[TAB] Switch window | [a] Add | [d] Delete | [e] Edit | "
-                   "[space] Toggle todo | [p] Priority | [s] Sort | [h] Hide/Show | "
-                   "[/] Search | [u] Undo | [Ctrl+r] Redo | [t] Theme | [q] Quit")
+        commands = (" [?] Help | [TAB] Switch window | [a] + | [d] - | [e] Edit | "
+                   "[space] Toggle | [p] Priority | [s] Sort | [h] Hide/Show | [q] Quit")
         stdscr.addstr(2, 0, commands)
 
+        # Draw project window
         project_win.addstr(0, 2, "Projects")
         for i, project in enumerate(todo.projects):
             style = curses.A_REVERSE if i == todo.project_selection and todo.active_window == 'projects' else curses.A_NORMAL
             project_win.addstr(i+1, 2, f"• {project.name}", style)
 
-        todo_win.addstr(0, 2, f"Todos - {todo.projects[todo.project_selection].name if todo.projects else 'No Project'}")
-        if todo.projects:
+        # Draw todo window with safe header rendering
+        if not todo.projects:
+            todo_win.addstr(0, 2, "Todos - No Project")
+        else:
             visible_todos = todo.get_visible_todos()
             completed_count = len([t for t in todo.projects[todo.project_selection].todos if t['completed']])
             total_count = len(todo.projects[todo.project_selection].todos)
@@ -554,7 +688,11 @@ def main(stdscr):
                     style |= curses.A_REVERSE
                 
                 display_str = format_todo_display(task)
-                todo_win.addstr(i+1, 2, display_str, style)
+                try:
+                    todo_win.addstr(i+1, 2, display_str, style)
+                except curses.error:
+                    # Handle case where todo text is too long for window
+                    pass
 
         stdscr.refresh()
         project_win.refresh()
@@ -615,6 +753,8 @@ def main(stdscr):
         elif key == ord(' '):
             if todo.active_window == 'todos':
                 todo.toggle_todo()
+        elif key == ord('?'):
+            show_help_window(stdscr, todo)
         elif key == curses.KEY_UP:
             if todo.active_window == 'projects':
                 todo.project_selection = max(0, todo.project_selection - 1)
@@ -718,7 +858,7 @@ def main(stdscr):
             if todo.restore_state(todo.undo_manager.undo(current_state)):
                 todo.save_data()
                 
-        elif key == ord('r') and key == curses.KEY_CTRL:  # Ctrl+R for Redo
+        elif key == 18:  # Ctrl+R for Redo
             current_state = {
                 'projects': [{
                     'name': p.name,
@@ -753,6 +893,8 @@ def main(stdscr):
                         pass
                     curses.noecho()
                     curses.curs_set(0)
+        elif key == ord('?'):
+            show_help_window(stdscr, todo)
 
 if __name__ == "__main__":
     curses.wrapper(main)

@@ -5,7 +5,7 @@ Dependancies: \
   datetime \
   os \
   shutil \
-  copy \ 
+  copy \
   typing
 
 

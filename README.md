@@ -2,7 +2,14 @@ Simple project manager or todo list using Python. Currently using NordTheme colo
 Dependancies: \
   curses \
   json \
-  datetime
+  datetime \
+  os \
+  shutil \
+  copy \ 
+  typing
+
+
+
 
 Screenshot in action:
 NordTheme
